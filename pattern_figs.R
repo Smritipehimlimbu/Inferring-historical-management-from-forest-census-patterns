@@ -1,0 +1,161 @@
+source("pattern_model_lib.R")
+
+graphics.off()
+
+# Parameters (defaults)
+cs<-0.001	# Conditioning strength
+cap<-"p" #"n"-negative feedback, "p"-positive feedback
+cnd<-"l" #"l"-linear, "nl"-nonlinear
+	
+sp_l<-c("A","B")	#Species list
+
+set.seed(1)
+
+# Initialization
+xm<-50
+ym<-20
+N<- xm*ym	#Total stems - constant
+
+sp0 <-sample(sp_l,size=N,replace=TRUE)		#Check if we can evenly divide
+xy0<-cbind(rep(1:xm,each=ym),rep(1:ym,xm))
+
+# Linear Environment
+e0<-matrix(seq(from=0,to=1,length.out=xm),nrow=ym,ncol=xm,byrow=TRUE)
+
+# Simulations
+tic()
+dat01<-pattern_model_2d_0(0,cap,"l",sp0,e0)
+dat02<-pattern_model_2d_0(0.001,"n","l",sp0,e0)
+dat03<-pattern_model_2d_0(0.001,"p","l",sp0,e0)
+dat04<-pattern_model_2d_0(0.001,"p","nl",sp0,e0)
+toc()
+
+# Patchy Environment
+e1<-cbind(matrix(seq(from=0,to=0.3,length.out=xm/2),nrow=ym,ncol=xm/2,byrow=TRUE),matrix(seq(from=0.7,to=1,length.out=xm/2),nrow=ym,ncol=xm/2,byrow=TRUE))
+
+# Simulations
+
+tic()
+dat11<-pattern_model_2d_0(0,cap,"l",sp0,e1)
+dat12<-pattern_model_2d_0(0.001,"n","l",sp0,e1)
+dat13<-pattern_model_2d_0(0.001,"p","l",sp0,e1)
+dat14<-pattern_model_2d_0(0.001,"p","nl",sp0,e1)
+toc()
+
+#Plots
+dat00<-data.frame(species=sp0,x=xy0[,1],y=xy0[,2],env=c(e0))
+fig00<-ggplot(dat00, aes(x = x, y = y)) + 
+	geom_raster(aes(fill=env))+
+	scale_fill_gradientn(colours=c("white","grey30"))+
+	#scale_fill_gradientn(colours=c("#2A649C","#FFFFFF","#DDC046"))+
+	geom_point(aes(shape=species))+
+#	coord_fixed(ratio=3)+
+	scale_shape_manual(values=c(1,16))+
+	#scale_color_manual(values=c("white","black"))+
+	ggtitle("Initial condition (Linear gradient)")+
+	theme(legend.position="none")
+
+dat10<-data.frame(species=sp0,x=xy0[,1],y=xy0[,2],env=c(e1))
+fig10<-ggplot(dat10, aes(x = x, y = y)) + 
+	geom_raster(aes(fill=env))+
+	scale_fill_gradientn(colours=c("white","grey30"))+
+	#scale_fill_gradientn(colours=c("#2A649C","#FFFFFF","#DDC046"))+
+	geom_point(aes(shape=species))+
+#	coord_fixed(ratio=3)+
+	scale_shape_manual(values=c(1,16))+
+	#scale_color_manual(values=c("white","black"))+
+	ggtitle("Initial condition (Patchy)")+
+	theme(legend.position="none")
+
+fig01<-ggplot(dat01, aes(x = x, y = y)) + 
+	geom_raster(aes(fill=env))+
+	scale_fill_gradientn(colours=c("white","grey30"))+
+	#scale_fill_gradientn(colours=c("#2A649C","#FFFFFF","#DDC046"))+
+	geom_point(aes(shape=species))+
+#	coord_fixed(ratio=3)+
+	scale_shape_manual(values=c(1,16))+
+	#scale_color_manual(values=c("white","black"))+
+	ggtitle("Filtering only")+
+	theme(legend.position="none")
+
+fig02<-ggplot(dat02, aes(x = x, y = y)) + 
+	geom_raster(aes(fill=env))+
+	scale_fill_gradientn(colours=c("white","grey30"))+
+	#scale_fill_gradientn(colours=c("#2A649C","#FFFFFF","#DDC046"))+
+	geom_point(aes(shape=species))+
+#	coord_fixed(ratio=3)+
+	scale_shape_manual(values=c(1,16))+
+	#scale_color_manual(values=c("white","black"))+
+	ggtitle("Negative feedback")+
+	theme(legend.position="none")
+
+fig03<-ggplot(dat03, aes(x = x, y = y)) + 
+	geom_raster(aes(fill=env))+
+	scale_fill_gradientn(colours=c("white","grey30"))+
+	#scale_fill_gradientn(colours=c("#2A649C","#FFFFFF","#DDC046"))+
+	geom_point(aes(shape=species))+
+#	coord_fixed(ratio=3)+
+	scale_shape_manual(values=c(1,16))+
+	#scale_color_manual(values=c("white","black"))+
+	ggtitle("Positive feedback")+
+	theme(legend.position="none")
+
+fig04<-ggplot(dat04, aes(x = x, y = y)) + 
+	geom_raster(aes(fill=env))+
+	scale_fill_gradientn(colours=c("white","grey30"))+
+	#scale_fill_gradientn(colours=c("#2A649C","#FFFFFF","#DDC046"))+
+	geom_point(aes(shape=species))+
+#	coord_fixed(ratio=3)+
+	scale_shape_manual(values=c(1,16))+
+	#scale_color_manual(values=c("white","black"))+
+	ggtitle("Positive feedback (nonlinear conditioning)")+
+	theme(legend.position="none")
+
+fig11<-ggplot(dat11, aes(x = x, y = y)) + 
+	geom_raster(aes(fill=env))+
+	scale_fill_gradientn(colours=c("white","grey30"))+
+	#scale_fill_gradientn(colours=c("#2A649C","#FFFFFF","#DDC046"))+
+	geom_point(aes(shape=species))+
+#	coord_fixed(ratio=3)+
+	scale_shape_manual(values=c(1,16))+
+	#scale_color_manual(values=c("white","black"))+
+	ggtitle("Filtering only")+
+	theme(legend.position="none")
+
+fig12<-ggplot(dat12, aes(x = x, y = y)) + 
+	geom_raster(aes(fill=env))+
+	scale_fill_gradientn(colours=c("white","grey30"))+
+	#scale_fill_gradientn(colours=c("#2A649C","#FFFFFF","#DDC046"))+
+	geom_point(aes(shape=species))+
+#	coord_fixed(ratio=3)+
+	scale_shape_manual(values=c(1,16))+
+	#scale_color_manual(values=c("white","black"))+
+	ggtitle("Negative feedback")+
+	theme(legend.position="none")
+
+fig13<-ggplot(dat13, aes(x = x, y = y)) + 
+	geom_raster(aes(fill=env))+
+	scale_fill_gradientn(colours=c("white","grey30"))+
+	#scale_fill_gradientn(colours=c("#2A649C","#FFFFFF","#DDC046"))+
+	geom_point(aes(shape=species))+
+#	coord_fixed(ratio=3)+
+	scale_shape_manual(values=c(1,16))+
+	#scale_color_manual(values=c("white","black"))+
+	ggtitle("Positive feedback")+
+	theme(legend.position="none")
+
+fig14<-ggplot(dat14, aes(x = x, y = y)) + 
+	geom_raster(aes(fill=env))+
+	scale_fill_gradientn(colours=c("white","grey30"))+
+	#scale_fill_gradientn(colours=c("#2A649C","#FFFFFF","#DDC046"))+
+	geom_point(aes(shape=species))+
+#	coord_fixed(ratio=3)+
+	scale_shape_manual(values=c(1,16))+
+	#scale_color_manual(values=c("white","black"))+
+	ggtitle("Positive feedback (nonlinear conditioning)")+
+	theme(legend.position="none")
+
+
+fig<-grid.arrange(fig00,fig10,fig01,fig11,fig02,fig12,fig03,fig13,fig04,fig14,nrow=5)
+
+ggsave(filename = file.path("./output","pattern_2d.png"), plot = fig, width = 18, height = 12, units = "in")
