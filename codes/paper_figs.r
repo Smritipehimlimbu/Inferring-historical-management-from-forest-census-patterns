@@ -10,7 +10,20 @@ census_viz(10,"fig2d.png","summary_lu.png")
 clust_nhood("basal",1,20)
 
 dir.create("../data/census_clust_out")
+dir.create("./output/clust_plots/basal_1_20")
 
 clust_plot("ward.D2","ball","basal",1,20)
 clust_plot("ward.D2","hartigan","basal",1,20)
+
+# Fig. S1 (saved in clust_plots/basal_1_15 and 25)
+dir.create("./output/clust_plots/basal_1_15")
+clust_nhood("basal",1,15)
+clust_plot("ward.D2","ball","basal",1,15)
+clust_plot("ward.D2","hartigan","basal",1,15)
+
+dir.create("./output/clust_plots/basal_1_25")
+clust_nhood("basal",1,25)
+clust_plot("ward.D2","ball","basal",1,25)
+clust_plot("ward.D2","hartigan","basal",1,25)
+
 toc()

@@ -70,6 +70,7 @@
 # paper\_figs
 * Output:
     1. (Fig. 2d) Tree distribution as scatter plot with top 10 species in legend
+    2. (Fig. 4a) Cluster distribution as scatter plot
 
 # fig3
 * Output: (Fig. 3) Two sets of initial condition and community assembly outcome for 4 different community assembly processes
