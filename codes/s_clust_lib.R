@@ -2,7 +2,6 @@
 
 library(tidyverse)
 library(ggplot2)
-library(factoextra)
 library(NbClust)
 library(tictoc)
 
