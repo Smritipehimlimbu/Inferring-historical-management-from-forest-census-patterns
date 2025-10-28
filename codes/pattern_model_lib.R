@@ -2,7 +2,7 @@ library(ggplot2)
 library(gridExtra)
 library(tictoc)
 
-pattern_model_2d = function(cs,cap,cnd,sp0,e0){
+pattern_model_2d = function(cs,cap,cnd,sp0,e0,T){
 # cs >0 - conditioning strength
 # cap - "n" or "p" - negative or positive conditioning
 # cnd - "l" or "nl" - linear or nonlinear conditioning
@@ -12,7 +12,7 @@ pattern_model_2d = function(cs,cap,cnd,sp0,e0){
 	# Parameters
 	N<-length(sp0)
 	m<- 0.1	# Mortality
-	T<- 5000	#Total time steps
+#	T<- 5000	#Total time steps
 
 	if(cap=="n"){
 		capt<-"A"

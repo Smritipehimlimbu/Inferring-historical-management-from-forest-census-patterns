@@ -6,7 +6,7 @@ graphics.off()
 cs<-0.001	# Conditioning strength
 cap<-"p" #"n"-negative feedback, "p"-positive feedback
 cnd<-"l" #"l"-linear, "nl"-nonlinear
-T<-5000	# Total time
+T<-10000	# Total time
 	
 sp_l<-c("A","B")	#Species list
 
@@ -44,30 +44,6 @@ dat14<-pattern_model_2d(0.001,"p","nl",sp0,e1,T)
 toc()
 
 #Plots
-dat00<-data.frame(species=sp0,x=xy0[,1],y=xy0[,2],env=c(e0))
-fig00<-ggplot(dat00, aes(x = x, y = y)) + 
-	geom_raster(aes(fill=env))+
-	scale_fill_gradientn(colours=c("white","grey30"))+
-	#scale_fill_gradientn(colours=c("#2A649C","#FFFFFF","#DDC046"))+
-	geom_point(aes(shape=species))+
-#	coord_fixed(ratio=3)+
-	scale_shape_manual(values=c(1,16))+
-	#scale_color_manual(values=c("white","black"))+
-	ggtitle("Initial condition (Linear gradient)")+
-	theme(legend.position="none")
-
-dat10<-data.frame(species=sp0,x=xy0[,1],y=xy0[,2],env=c(e1))
-fig10<-ggplot(dat10, aes(x = x, y = y)) + 
-	geom_raster(aes(fill=env))+
-	scale_fill_gradientn(colours=c("white","grey30"))+
-	#scale_fill_gradientn(colours=c("#2A649C","#FFFFFF","#DDC046"))+
-	geom_point(aes(shape=species))+
-#	coord_fixed(ratio=3)+
-	scale_shape_manual(values=c(1,16))+
-	#scale_color_manual(values=c("white","black"))+
-	ggtitle("Initial condition (Patchy)")+
-	theme(legend.position="none")
-
 fig01<-ggplot(dat01, aes(x = x, y = y)) + 
 	geom_raster(aes(fill=env))+
 	scale_fill_gradientn(colours=c("white","grey30"))+
@@ -157,6 +133,6 @@ fig14<-ggplot(dat14, aes(x = x, y = y)) +
 	theme(legend.position="none")
 
 
-fig<-grid.arrange(fig00,fig10,fig01,fig11,fig02,fig12,fig03,fig13,fig04,fig14,nrow=5)
+fig<-grid.arrange(fig01,fig11,fig02,fig12,fig03,fig13,fig04,fig14,nrow=4)
 
-ggsave(filename = file.path("./output","fig3.png"), plot = fig, width = 18, height = 12, units = "in")
+ggsave(filename = file.path("./output","figS2a.png"), plot = fig, width = 18, height = 12, units = "in")
