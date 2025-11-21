@@ -81,7 +81,7 @@
 
 ### assembled\_dat
 * Output: Spreadsheet with census, elevation, soil, land use and cluster
-* Dependency: tree\_soil, full\_dat, census\_complete\_silhouette
+* Dependency: tree\_soil, full\_dat, ward.D2\_ball\_basal\_1\_20, census\_elevation csv files in data folder
 
 ### fig4b\_prep
 * Output: 
