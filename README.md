@@ -72,38 +72,17 @@
     1. (Fig. 2d) Tree distribution as scatter plot with top 10 species in legend
     2. (Fig. 4a) Cluster distribution as scatter plot
 
+### assembled\_dat
+* Output: Spreadsheet with census, elevation, soil, land use and cluster - census\_w\_cluster.csv
+* Dependency: tree\_soil, full\_dat, ward.D2\_ball\_basal\_1\_20, census\_elevation csv files in data folder
+
 ### fig3
 * Output: (Fig. 3) Two sets of initial condition and community assembly outcome for 4 different community assembly processes
 
-### elevation\_dat
-* Output: Spreadsheet with coordinates and elevation
-* Dependency: full\_dat.csv file in data folder
-
-### assembled\_dat
-* Output: Spreadsheet with census, elevation, soil, land use and cluster
-* Dependency: tree\_soil, full\_dat, ward.D2\_ball\_basal\_1\_20, census\_elevation csv files in data folder
-
 ### fig4b\_prep
-* Output: 
-	1. Table (csv) with index, best number of clusters and index value
-	2. 2x15 matrix with row vector of index value for different number of clusters
-* Dependency: basal\_1\_neighbours.RData
-
-### fig4b
-* Output: Plots of number of clusters vs index value
-* Dependency: Output 2 of fig3b\_prep
-
-### fig4c
-* Output: Histogram of silhoutte index after bootstrapping
-* Dependency: Output of 2048 bootstrapping of clustering with complete and silhouette
-
-### cluster\_pcoa
 * Output: PCoA results as RData
 * Dependency: basal\_1\_neighbours.RData
 
-### fig5a
+### fig4b
 * Output: PCoA plot
-* Dependency: cluster\_pcoa
-
-### patchiness\_test
-* Output: Simulated data, clusters, significance
+* Dependency: pcoa\_basal.RData and census\_w\_cluster.csv
