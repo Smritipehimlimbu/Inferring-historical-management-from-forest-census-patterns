@@ -1,0 +1,328 @@
+---
+title: "Fullington_diversity_analysis"
+author: "Smriti"
+date: "2025-06-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Install packages
+```{r}
+pacman::p_load(tidyverse, dplyr, readr, codyn, lme4, lmerTest, ggrepel, tictoc, ggpubr, nlme)
+
+```
+#data upload
+```{r}
+df_all_with_slope_aspect <- read.csv("df_all_with_slope_aspect.csv")
+
+```
+#Community structure (richness, evenness, dominance)
+```{r}
+colnames(df_all_with_slope_aspect)
+length(unique(df_all_with_slope_aspect$Quadrat))
+
+#Averaging by cluster, quadrat, and species
+df_all.avg.rac <- df_all_with_slope_aspect %>%  dplyr::group_by(Clusters_id, Quadrat, Species) %>% dplyr::summarize(stem_count=n()) %>%  mutate(rank = rank(desc(stem_count))) %>% filter(Species!="Corner")
+
+
+# Identify quadrats with multiple clusters
+quadrat_with_one_cluster <- df_all.avg.rac %>%
+  group_by(Quadrat) %>%                     # Group by quadrat
+  summarise(n_clusters = n_distinct(Clusters_id)) %>% # Count unique land-use types
+  filter(n_clusters == 1) 
+
+# Filter the original dataframe to keep only these quadrats
+df_one_cluster <- df_all.avg.rac %>%
+  filter(Quadrat %in% quadrat_with_one_cluster$Quadrat)
+
+
+#Measuring rank abundance curve difference for the two land use types
+colnames(df_one_cluster)
+
+df_one_cluster$stem_count=as.numeric(df_one_cluster$stem_count)
+df_one_cluster$Quadrat=as.character(df_one_cluster$Quadrat)
+
+
+###community structure
+Richness_evenness <- community_structure(
+df_one_cluster,
+time.var = NULL,
+abundance.var = "stem_count",
+replicate.var = "Quadrat",
+metric = c("Evar", "SimpsonEvenness", "EQ")
+)
+
+#add land_use info
+df_quadrat_info <- df_one_cluster %>% dplyr::select(Quadrat, Clusters_id)
+Richness_evenness_cluster <- merge(Richness_evenness, df_quadrat_info, by="Quadrat", all.x=FALSE) %>% unique() %>%  drop_na(Evar, Clusters_id, Quadrat)
+
+# Model for richness
+model_richness <- lme(richness ~ Clusters_id,
+                      random = ~1 | Quadrat,
+                      data = Richness_evenness_cluster)
+summary(model_richness)
+anova(model_richness)
+##Kruskal-Wallis richness
+kruskal.test(richness ~ Clusters_id, data = Richness_evenness_cluster)
+
+pairwise.wilcox.test(Richness_evenness_cluster$richness, Richness_evenness_cluster$Clusters_id, p.adjust.method = "BH")
+
+# Convert cluster to factor with informative labels
+Richness_evenness_cluster$Cluster <- factor(Richness_evenness_cluster$Clusters_id,
+                                   levels = c(1, 2, 3),
+                                   labels = c("Cluster 1", "Cluster 2", "Cluster 3"))
+
+# Define pairwise comparisons
+my_comparisons <- list(c("1", "2"), c("1", "3"), c("2", "3"))
+
+# Plot
+richness_cluster_fig <- ggplot(Richness_evenness_cluster, aes(x = as.factor(Clusters_id), y = richness)) +
+  geom_boxplot(fill = "slateblue", outlier.shape = NA) +
+  geom_jitter(width = 0.4, size = 2,alpha = 0.7, color= "black")  +
+  stat_compare_means(comparisons = my_comparisons, method = "wilcox.test", label = "p.signif", size = 6, bracket.size = 1.2)  + scale_y_continuous(limits = c(0, 22))+
+  labs(
+    x = "Cluster",
+    y = "Species Richness"
+  ) +
+  theme_minimal(base_size = 20) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, size = 1.2),
+    axis.line = element_line(color = "black"),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+
+
+
+# Model for evenness
+model_evenness <- lme(Evar ~ Clusters_id,
+                      random = ~1 | Quadrat,
+                      data = Richness_evenness_cluster)
+
+summary(model_evenness)
+anova(model_evenness)
+
+##Kruskal-Wallis evenness
+kruskal.test(Evar ~ Clusters_id, data = Richness_evenness_cluster)
+
+pairwise.wilcox.test(Richness_evenness_cluster$Evar, Richness_evenness_cluster$Clusters_id, p.adjust.method = "BH")
+
+# Convert cluster to factor with informative labels
+Richness_evenness_cluster$Cluster <- factor(Richness_evenness_cluster$Clusters_id,
+                                   levels = c(1, 2, 3),
+                                   labels = c("Cluster 1", "Cluster 2", "Cluster 3"))
+
+# Define pairwise comparisons
+my_comparisons <- list(c("1", "2"), c("1", "3"), c("2", "3"))
+
+# Plot
+evenness_cluster_fig <- ggplot(Richness_evenness_cluster, aes(x = as.factor(Clusters_id), y = Evar)) +
+  geom_boxplot(fill = "slateblue", outlier.shape = NA) +
+  geom_jitter(width = 0.4, alpha = 0.7, size = 2, color = "black")  +
+  stat_compare_means(comparisons = my_comparisons, method = "wilcox.test", label = "p.signif", size = 6, bracket.size = 1.2) +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(
+    x = "Cluster",
+    y = "Species Evenness"
+  ) +
+  theme_minimal(base_size = 20) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, size = 1.2),
+    axis.line = element_line(color = "black"),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+
+## Dominance
+
+# First, calculate relative abundances
+dominance_df <- df_one_cluster %>%
+  group_by(Quadrat, Species) %>%
+  summarize(abundance = sum(stem_count), .groups = "drop") %>%
+  group_by(Quadrat) %>%
+  mutate(p = abundance / sum(abundance)) %>%
+  summarize(Dominance = sum(p^2), .groups = "drop")
+
+#remove species column from df_one_cluster
+colnames(df_one_cluster)
+df_one_cluster_no_species <- df_one_cluster %>% dplyr::select(-c(Species, stem_count, rank))
+
+dominance_merged <- dominance_df %>%
+  left_join(df_one_cluster_no_species, by = "Quadrat") %>% unique()
+
+##dominance model
+model_dominance <- lme(Dominance ~ Clusters_complete_silhouette,
+                      random = ~1 | Quadrat,
+                      data = dominance_merged)
+
+summary(model_dominance)
+anova(model_dominance)
+
+##Kruskal-Wallis dominance
+kruskal.test(Dominance ~ Clusters_complete_silhouette, data = dominance_merged)
+
+pairwise.wilcox.test(dominance_merged$Dominance, dominance_merged$Clusters_complete_silhouette, p.adjust.method = "BH")
+
+# Convert cluster to factor with informative labels
+dominance_merged$Cluster <- factor(dominance_merged$Clusters_complete_silhouette,
+                                   levels = c(1, 2, 3),
+                                   labels = c("Cluster 1", "Cluster 2", "Cluster 3"))
+
+# Define pairwise comparisons
+my_comparisons <- list(c("1", "2"), c("1", "3"), c("2", "3"))
+
+# Plot
+dominance_cluster_fig <- ggplot(dominance_merged, aes(x = as.factor(Clusters_complete_silhouette), y = Dominance)) +
+  geom_boxplot(fill = "slateblue", outlier.shape = NA) +
+  geom_jitter(width = 0.4, alpha = 0.7, size = 2, color= "black")  +
+  stat_compare_means(comparisons = my_comparisons, method = "wilcox.test", label = "p.signif", size = 6, bracket.size = 1.2) +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(
+    x = "Cluster",
+    y = "Simpson's Dominance Index"
+  ) +
+  theme_minimal(base_size = 20) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, size = 1.2),
+    axis.line = element_line(color = "black"),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+##combined figure
+combined_diversity_fig <- ggarrange(
+  richness_cluster_fig, evenness_cluster_fig,
+  labels = c("A)", "B)",
+  ncol = 2, nrow = 1,
+  align = "v",
+  heights = c(1, 1) 
+))
+
+ggsave("combined.diversity.png", combined_diversity_fig, dpi = 300, width = 8, height = 6, units = "in")
+
+```
+#Stem count and basal area per species 
+
+```{r}
+colnames(df_all_with_slope_aspect)
+
+#graph for species*stem count per cluster
+df_all.avg <- df_all_with_slope_aspect %>% 
+  dplyr::group_by(Clusters_id, ScientificName) %>% 
+  dplyr::summarize(stem_count = n()) %>% 
+  filter(ScientificName != "" & ScientificName != "ABCDE ABCDE" & ScientificName != "UNKNOWN UNKNOWN")
+df_all.avg$Clusters_id=as.factor(df_all.avg$Clusters_id)
+
+
+
+# Filter the top four species by stem count
+top_species_unique <- df_all.avg %>%
+  arrange(desc(stem_count)) %>%
+  slice(1:2)  # Select the top 4 species
+
+# Create the plot with italic labels and slanted upwards lines
+species_stem <- ggplot(df_all.avg, aes(x = ScientificName, y = stem_count, group = Clusters_id, color = Clusters_id)) + 
+  geom_line(size = 1.2) + 
+  scale_color_manual(values = c("#1F77B4","#FF7F0F","#2CA02C")) +  # Customize with three colors for the clusters
+  theme_minimal(base_size = 14) +  # Ensure white background
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 18, face = "bold"),
+    axis.title.y = element_text(size = 18, face = "bold"),
+    legend.position = "right",  # Adjust legend position
+    legend.title = element_text(size = 18, face = "bold"),
+    legend.text = element_text(size = 14),
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    panel.border = element_rect(colour = "black", fill = NA, size = 1.5),  # Add a border around the plot
+    axis.line = element_line(size = 1, colour = "black"),
+    plot.background = element_rect(fill = "white"),  # Ensure white background
+    panel.background = element_rect(fill = "white"),axis.ticks.x = element_line(size = 0.9, color = "black")
+  ) + 
+  labs(
+    x = "Species Name",
+    y = "Stem Count",
+    color = "Cluster") +
+  scale_x_discrete(limits = unique(df_all.avg$ScientificName)) +  # Ensures all species names are displayed
+  geom_text_repel(data = top_species_unique, aes(label = paste0("italic('", ScientificName, "')")), 
+                  parse = TRUE,  # Italicize the species names
+                  size = 6, color = "black", 
+                  nudge_x = 1.5, nudge_y = 400,  # Move the labels upwards and to the right
+                  box.padding = 0.2, point.padding = 0.2,  # Decrease the padding to shorten lines
+                  segment.color = "grey50", 
+                  segment.size = 0.80,  # Keep line size thick enough for visibility
+                  segment.curvature = 0,  # Add a slight upward curve to the line
+                  direction = "y",  # Align the labels vertically
+                  hjust = 0)  # Align the text to the right
+
+
+species_stem
+ggsave("Fig4_species_stem_count.png", species_stem, dpi = 300, height = 7, width = 14, units = "in")
+
+
+
+
+
+#####################################################basal area
+df_all.avg.dbh <- df_all_with_slope_aspect %>% 
+  dplyr::group_by(Clusters_id, ScientificName) %>% 
+  dplyr::summarize(DBH=pi*sum(DBH.x^2)/40000) %>% 
+  filter(ScientificName != "" & ScientificName != "ABCDE ABCDE" & ScientificName != "UNKNOWN UNKNOWN")
+
+df_all.avg.dbh$Clusters_id=as.factor(df_all.avg.dbh$Clusters_id)
+
+# Filter the top four species by stem count
+top_species_unique_dbh <- df_all.avg.dbh %>%
+  arrange(desc(DBH)) %>%
+  slice(1:2)  
+
+#plot
+species_dbh <- ggplot(df_all.avg.dbh, aes(x = ScientificName, y = DBH, group = Clusters_id, color = Clusters_id)) + 
+  geom_line(size = 1.2) + 
+  scale_color_manual(values = c("#1F77B4","#FF7F0F","#2CA02C")) +  # Customize with three colors for the clusters
+    theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 18, face = "bold"),
+    axis.title.y = element_text(size = 18, face = "bold"),
+    legend.position = "right",  # Adjust legend position
+    legend.title = element_text(size = 18, face = "bold"),
+    legend.text = element_text(size = 14),
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    panel.border = element_rect(colour = "black", fill = NA, size = 1.5),  # Add a border around the plot
+    axis.line = element_line(size = 1, colour = "black"),
+    plot.background = element_rect(fill = "white"),  # Ensure white background
+    panel.background = element_rect(fill = "white", color = "white")
+  ) +
+    scale_x_discrete(limits = unique(df_all.avg.dbh$ScientificName)) +  # Ensures all species names are displayed
+		labs(
+    x = "Species Name",
+    y = expression(paste("Basal Area ",(m^2))),
+    color = "Cluster #")+
+  scale_x_discrete(limits = unique(df_all.avg$ScientificName)) +  # Ensures all species names are displayed
+  geom_text_repel(data = top_species_unique_dbh, aes(label = paste0("italic('", ScientificName, "')")), 
+                  parse = TRUE,  # Italicize the species names
+                  size = 6, color = "black", 
+                  nudge_x = 1.5, nudge_y = 50,  # Move the labels upwards and to the right
+                  box.padding = 0.2, point.padding = 0.2,  # Decrease the padding to shorten lines
+                  segment.color = "grey50", 
+                  segment.size = 0.80,  # Keep line size thick enough for visibility
+                  segment.curvature = 0,  # Add a slight upward curve to the line
+                  direction = "y",  # Align the labels vertically
+                  hjust = 0)  # Alig
+
+species_dbh
+ggsave("Fig4c_species_dbh.png", species_dbh, dpi = 300, height = 7, width = 14, units = "in")
+
+```
