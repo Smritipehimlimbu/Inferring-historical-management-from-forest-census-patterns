@@ -6,6 +6,7 @@
 * tree\_soil: soil type data + full\_dat from Crispy
 * census\_cluster\_only: species + cluster only
 * census\_w\_cluster: only variables relevant for analysis
+* df_all_with_slope_aspect: full data file with census data, cluster number, and data for soil type, elevation, and slope
 
 ## Library 1: s\_clust\_lib
 ### Funtion: census\_viz
@@ -86,3 +87,9 @@
 ### fig4b
 * Output: PCoA plot
 * Dependency: pcoa\_basal.RData and census\_w\_cluster.csv
+
+### fig5 (Multinomial.analyses.Rmd)
+*Output: Probability of cluster membership as a function of management history, soil type, elevation and slope
+### fig 4c,S4, S5 (Diversity.analyses.Rmd)
+*Output: Basal area of species per cluster (fig. 4c), Stem count of species per cluster (fig. S4), Richness and evenness per cluster (fig. S5)
+
