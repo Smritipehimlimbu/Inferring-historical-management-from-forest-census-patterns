@@ -6,7 +6,7 @@
 * tree\_soil: soil type data + full\_dat from Crispy
 * census\_cluster\_only: species + cluster only
 * census\_w\_cluster: only variables relevant for analysis
-* df_all_with_slope_aspect: full data file with census data, cluster number, and data for soil type, elevation, and slope
+* df_all_with_slope_aspect: full data file with census data, cluster number, and data for management history, soil type, elevation, and slope
 
 ## Library 1: s\_clust\_lib
 ### Funtion: census\_viz
