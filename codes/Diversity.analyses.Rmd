@@ -15,7 +15,7 @@ pacman::p_load(tidyverse, dplyr, readr, codyn, lme4, lmerTest, ggrepel, tictoc, 
 ```
 #data upload
 ```{r}
-df_all_with_slope_aspect <- read.csv("df_all_with_slope_aspect.csv")
+df_all_with_slope_aspect <- read.csv("../data/df_all_with_slope_aspect.csv")
 
 ```
 #Community structure (richness, evenness, dominance)
@@ -144,7 +144,7 @@ combined_diversity_fig <- ggarrange(
   heights = c(1, 1) 
 ))
 
-ggsave("combined.diversity.png", combined_diversity_fig, dpi = 300, width = 8, height = 6, units = "in")
+ggsave("./output/figS5.png", combined_diversity_fig, dpi = 300, width = 8, height = 6, units = "in")
 
 ```
 #Stem count and basal area grouped by species and cluster number
@@ -205,7 +205,7 @@ species_stem <- ggplot(df_all.avg, aes(x = ScientificName, y = stem_count, group
 
 
 species_stem
-ggsave("Fig4_species_stem_count.png", species_stem, dpi = 300, height = 7, width = 14, units = "in")
+ggsave("./output/figS4.png", species_stem, dpi = 300, height = 7, width = 14, units = "in")
 
 
 #####################################################basal area
@@ -259,6 +259,6 @@ species_dbh <- ggplot(df_all.avg.dbh, aes(x = ScientificName, y = DBH, group = C
                   hjust = 0)
 
 species_dbh
-ggsave("Fig4c_species_dbh.png", species_dbh, dpi = 300, height = 7, width = 14, units = "in")
+ggsave("./output/fig4c.png", species_dbh, dpi = 300, height = 7, width = 14, units = "in")
 
 ```
