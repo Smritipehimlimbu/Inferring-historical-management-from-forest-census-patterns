@@ -10,13 +10,13 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 #Install packages
 ```{r}
-pacman::p_load(tidyverse, dplyr, readr, codyn, lme4, lmerTest, ggrepel, tictoc, ggpubr, nlme, nnet, kableExtra, webshot, broom, ggeffects, ggpubr)
+pacman::p_load(effects,tidyverse, dplyr, readr, codyn, lme4, lmerTest, ggrepel, tictoc, ggpubr, nlme, nnet, kableExtra, webshot, broom, ggeffects, ggpubr)
 
 ```
 #data upload
 ```{r}
 
-df_all_with_slope_aspect <- read_csv("df_all_with_slope_aspect.csv")
+df_all_with_slope_aspect <- read_csv("../data/df_all_with_slope_aspect.csv")
 ```
 
 #Multinomial logistic regression
@@ -78,10 +78,10 @@ model_table <- tidy(model, conf.int = TRUE) %>%
   kable_styling("basic", full_width = FALSE)
 
 # Save the table as an html
-save_kable(model_table, "model_table.html")
+save_kable(model_table, "./output/model_table.html")
 
 # Convert the html table to an image (PNG or JPEG)
-webshot("model_table.html", "model_table.png")  
+webshot("model_table.html", "./output/model_table.png")  
 
 
 
@@ -128,6 +128,6 @@ model.fig.combined <- ggarrange(
   labels = c("a)", "b)", "c)", "d)"))
 
 
-ggsave("multinomial.fig.combined.png", model.fig.combined, dpi = 300, height = 10, width = 6, units = "in")
+ggsave("./output/fig5.png", model.fig.combined, dpi = 300, height = 10, width = 6, units = "in")
 
 ```
