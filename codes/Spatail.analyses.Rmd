@@ -1,0 +1,1691 @@
+---
+title: "Spatial.analyses"
+author: "Smriti Pehim Limbu"
+date: "2026-05-20"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Install packages
+```{r}
+install.packages("libranian")
+library(librarian)
+shelf(tidyverse, dplyr, readr, codyn, lme4, lmerTest, ggrepel, tictoc, ggpubr, nlme, brms, cmdstanr, MatchIt, cobalt, spdep, bayesplot, tidybayes, posterior, corrplot, rcompanion, ggplot2, patchwork, scales, nnet, tibble, performance)
+install.packages(
+  "cmdstanr",
+  repos = c("https://mc-stan.org/r-packages/", getOption("repos"))
+)
+library(cmdstanr)
+cmdstanr::check_cmdstan_toolchain(fix = TRUE) 
+cmdstanr::install_cmdstan()
+cmdstanr::check_cmdstan_toolchain()
+```
+#data upload
+```{r}
+df_all_with_slope_aspect <- read.csv("df_all_with_slope_aspect.csv")
+
+df_spatial <- df_all_with_slope_aspect %>%
+  mutate(
+    Land_use = as.character(Land_use),
+    MERGE_SRC = as.character(MERGE_SRC),
+    Land_use = case_when(
+      Land_use == "Managed Forest" ~ "Historically forested",
+      Land_use == "Old growth" ~ "Historically forested",
+      Land_use == "Managed/CutRegrowth" ~ "Historically forested",
+      Land_use == "Pasture1973" ~ "Historically pasture",
+      TRUE ~ Land_use
+    ),
+    Soil_type = case_when(
+      MERGE_SRC == "Glaciofluvial_Dissolve" ~ "Glaciolacustrine",
+      MERGE_SRC == "Till_Dissolve" ~ "Till",
+      TRUE ~ MERGE_SRC
+    ),
+
+    Elevation = Elevation.m.,
+
+    Clusters_id = as.factor(Clusters_id),
+    Land_use = as.factor(Land_use),
+    Soil_type = as.factor(Soil_type),
+    Elevation_sc = as.numeric(scale(Elevation)),
+    Slope_sc = as.numeric(scale(Slope)),
+    Aspect_sc = as.numeric(scale(Aspect)),
+    UTM18N_Easting_sc = as.numeric(scale(UTM18N_Easting)),
+    UTM18N_Northing_sc = as.numeric(scale(UTM18N_Northing))
+  ) %>%
+  drop_na(
+    Clusters_id,
+    Land_use,
+    Soil_type,
+    Elevation_sc,
+    Slope_sc,
+    Aspect_sc,
+    UTM18N_Easting_sc,
+    UTM18N_Northing_sc
+  ) %>%
+  mutate(
+    Aspect_rad = Aspect * pi / 180,
+    northness = cos(Aspect_rad),
+    eastness = sin(Aspect_rad),
+    northness_sc = as.numeric(scale(northness)),
+    eastness_sc = as.numeric(scale(eastness))
+  )
+
+# Set reference cluster 1 
+df_spatial$Clusters_id <- relevel(df_spatial$Clusters_id, ref = "1")
+#mutate spatial block
+
+df_spatial <- df_spatial %>%
+  mutate(
+    x_bin = cut(UTM18N_Easting_sc, breaks = 10),
+    y_bin = cut(UTM18N_Northing_sc, breaks = 10),
+    spatial_block = interaction(x_bin, y_bin, drop = TRUE)
+  )
+
+```
+
+#Analysis (check for correlation between land use and environment)
+```{r}
+#Check for correlation for numerical variables
+numeric_vars <- df_spatial %>%
+  select(
+    Elevation,
+    Slope,
+    northness,
+    eastness,
+    UTM18N_Easting,
+    UTM18N_Northing
+  )
+
+cor_mat <- cor(numeric_vars, use = "pairwise.complete.obs")
+
+cor_mat
+
+corrplot(
+  cor_mat,
+  method = "color",
+  type = "upper",
+  addCoef.col = "black",
+  tl.col = "black",
+  tl.srt = 45
+)
+
+#for categorical variables
+
+landuse_soil_table <- table(df_spatial$Land_use, df_spatial$Soil_type)
+
+landuse_soil_table
+
+prop.table(landuse_soil_table, margin = 1)
+
+chisq.test(landuse_soil_table)
+
+cramerV(
+  landuse_soil_table,
+  bias.correct = TRUE
+)
+
+```
+
+#Final figures for paper (supplemental env and management summaries & observed vs predicted figure)
+```{r}
+####supplemental showing the environment and management summaries####
+
+cluster_cols <- c(
+  "1" = "#1F77B4",
+  "2" = "#FF7F0F",
+  "3" = "#2CA02C"
+)
+
+df_plot <- df_spatial %>%
+  mutate(
+    Clusters_id = factor(Clusters_id, levels = c("1", "2", "3"))
+  )
+
+p_elev <- ggplot(df_plot, aes(x = Clusters_id, y = Elevation_sc, fill = Clusters_id)) +
+  geom_boxplot(alpha = 0.8, outlier.size = 0.4) +
+  scale_fill_manual(values = cluster_cols) +
+  theme_classic() +
+  labs(
+    x = "Cluster",
+    y = "Scaled elevation",
+    fill = "Cluster"
+  ) +
+  theme(legend.position = "none")
+
+p_slope <- ggplot(df_plot, aes(x = Clusters_id, y = Slope_sc, fill = Clusters_id)) +
+  geom_boxplot(alpha = 0.8, outlier.size = 0.4) +
+  scale_fill_manual(values = cluster_cols) +
+  theme_classic() +
+  labs(
+    x = "Cluster",
+    y = "Scaled slope",
+    fill = "Cluster",
+    title = "Slope"
+  ) +
+  theme(legend.position = "none")
+
+p_north <- ggplot(df_plot, aes(x = Clusters_id, y = northness_sc, fill = Clusters_id)) +
+  geom_boxplot(alpha = 0.8, outlier.size = 0.4) +
+  scale_fill_manual(values = cluster_cols) +
+  theme_classic() +
+  labs(
+    x = "Cluster",
+    y = "Scaled northness",
+    fill = "Cluster",
+    title = "Northness"
+  ) +
+  theme(legend.position = "none")
+
+p_east <- ggplot(df_plot, aes(x = Clusters_id, y = eastness_sc, fill = Clusters_id)) +
+  geom_boxplot(alpha = 0.8, outlier.size = 0.4) +
+  scale_fill_manual(values = cluster_cols) +
+  theme_classic() +
+  labs(
+    x = "Cluster",
+    y = "Scaled eastness",
+    fill = "Cluster",
+    title = "Eastness"
+  ) +
+  theme(legend.position = "none")
+
+land_use_summary <- df_plot %>%
+  count(Clusters_id, Land_use) %>%
+  group_by(Clusters_id) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup()
+
+p_land <- ggplot(land_use_summary, aes(x = Clusters_id, y = prop, fill = Land_use)) +
+  geom_col(color = "white", linewidth = 0.2) +
+  theme_classic() +
+  labs(
+    x = "Cluster",
+    y = "Proportion",
+    fill = "Land-use history",
+    title = "Land-use history"
+  )
+
+soil_summary <- df_plot %>%
+  count(Clusters_id, Soil_type) %>%
+  group_by(Clusters_id) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup()
+
+p_soil <- ggplot(soil_summary, aes(x = Clusters_id, y = prop, fill = Soil_type)) +
+  geom_col(color = "white", linewidth = 0.2) +
+  theme_classic() +
+  labs(
+    x = "Cluster",
+    y = "Proportion",
+    fill = "Soil type",
+    title = "Soil type"
+  )
+
+fig_env_mgmt <- (p_land | p_soil) /
+  (p_elev | p_slope) /
+  (p_north | p_east)
+
+fig_env_mgmt
+ggsave(
+  filename = "figure_cluster_environment_management_summaries.png",
+  plot = fig_env_mgmt,
+  width = 10,
+  height = 10,
+  dpi = 300
+)
+
+####figure showing predicted cluster map####
+
+cluster_cols <- c(
+  "1" = "#1F77B4",
+  "2" = "#FF7F0F",
+  "3" = "#2CA02C"
+)
+
+pred_probs_block <- fitted(m_block, scale = "response")
+pred_mean_block <- pred_probs_block[, "Estimate", ]
+
+pred_block_df <- cbind(
+  df_spatial,
+  as.data.frame(pred_mean_block)
+)
+
+pred_block_df$predicted_cluster <- colnames(pred_mean_block)[
+  apply(pred_mean_block, 1, which.max)
+]
+
+pred_block_df$predicted_cluster_clean <- gsub(
+  "P\\(Y = |\\)",
+  "",
+  pred_block_df$predicted_cluster
+)
+
+pred_block_df <- pred_block_df %>%
+  mutate(
+    predicted_cluster_clean = factor(
+      predicted_cluster_clean,
+      levels = c("1", "2", "3")
+    )
+  )
+
+p_predicted_cluster <- ggplot(pred_block_df, aes(
+  x = UTM18N_Easting_sc,
+  y = UTM18N_Northing_sc,
+  color = predicted_cluster_clean
+)) +
+  geom_point(size = 1) +
+  coord_equal() +
+  scale_color_manual(values = cluster_cols) +
+  theme_classic() +
+  labs(
+    x = "Scaled UTM Easting",
+    y = "Scaled UTM Northing",
+    color = "Predicted cluster",
+    title = "Predicted cluster membership"
+  )
+
+p_predicted_cluster
+
+ggsave(
+  filename = "figure_predicted_cluster_map_spatial_block.png",
+  plot = p_predicted_cluster,
+  width = 7,
+  height = 6,
+  dpi = 300
+)
+p_observed_cluster <- ggplot(pred_block_df, aes(
+  x = UTM18N_Easting_sc,
+  y = UTM18N_Northing_sc,
+  color = factor(Clusters_id, levels = c("1", "2", "3"))
+)) +
+  geom_point(size = 1) +
+  coord_equal() +
+  scale_color_manual(values = cluster_cols) +
+  theme_classic() +
+  labs(
+    x = "Scaled UTM Easting",
+    y = "Scaled UTM Northing",
+    color = "Observed cluster",
+    title = "Observed cluster membership"
+  )
+
+library(patchwork)
+
+
+p_observed_cluster <- p_observed_cluster +
+  labs(color = "Cluster")
+
+p_predicted_cluster <- p_predicted_cluster +
+  labs(color = "Cluster")
+
+fig_observed_predicted <- (p_observed_cluster | p_predicted_cluster) +
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A") &
+  theme(
+    legend.position = "right",
+    plot.tag = element_text(face = "bold", size = 16),
+    axis.title = element_text(size = 16, face = "plain"),
+    axis.text = element_text(size = 16),
+    plot.title = element_text(size = 16, face = "bold"),
+    legend.title = element_text(size = 16, face = "plain"),
+    legend.text = element_text(size = 16)
+  )
+
+fig_observed_predicted
+
+ggsave(
+  filename = "figure_observed_predicted_cluster_membership.png",
+  plot = fig_observed_predicted,
+  width = 11,
+  height = 5.5,
+  dpi = 300
+)
+
+```
+####Key predictors conditional effect####
+```{r}
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(brms)
+
+cluster_cols <- c(
+  "1" = "#1F77B4",
+  "2" = "#FF7F0F",
+  "3" = "#2CA02C"
+)
+
+ce_land <- conditional_effects(
+  m_block,
+  effects = "Land_use",
+  categorical = TRUE
+)
+
+ce_soil <- conditional_effects(
+  m_block,
+  effects = "Soil_type",
+  categorical = TRUE
+)
+
+ce_elev <- conditional_effects(
+  m_block,
+  effects = "Elevation_sc",
+  categorical = TRUE
+)
+
+ce_slope <- conditional_effects(
+  m_block,
+  effects = "Slope_sc",
+  categorical = TRUE
+)
+
+ce_north <- conditional_effects(
+  m_block,
+  effects = "northness_sc",
+  categorical = TRUE
+)
+
+ce_east <- conditional_effects(
+  m_block,
+  effects = "eastness_sc",
+  categorical = TRUE
+)
+
+clean_ce <- function(ce_object) {
+  
+  ce_df <- as.data.frame(ce_object[[1]])
+  
+  # Find the column that stores cluster/category identity
+  category_col <- intersect(
+    c("category", "cats__", "cat", "resp"),
+    names(ce_df)
+  )[1]
+  
+  if (is.na(category_col)) {
+    stop(
+      "Could not find a category column. Available columns are: ",
+      paste(names(ce_df), collapse = ", ")
+    )
+  }
+  
+  ce_df %>%
+    mutate(
+      category_clean = .data[[category_col]],
+      category_clean = gsub("P\\(Y = |\\)", "", category_clean),
+      category_clean = gsub("^mu", "", category_clean),
+      category_clean = factor(category_clean, levels = c("1", "2", "3"))
+    )
+}
+
+ce_land_df  <- clean_ce(ce_land)
+ce_soil_df  <- clean_ce(ce_soil)
+ce_elev_df  <- clean_ce(ce_elev)
+ce_slope_df <- clean_ce(ce_slope)
+ce_north_df <- clean_ce(ce_north)
+ce_east_df  <- clean_ce(ce_east)
+names(ce_land_df)
+head(ce_land_df)
+
+theme_ce <- theme_classic(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13),
+    axis.title = element_text(face = "bold"),
+    legend.title = element_text(face = "bold"),
+    legend.position = "right",
+    axis.text.x = element_text(size = 10),
+    strip.text = element_text(face = "bold")
+  )
+
+##management plot
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+
+cluster_cols <- c(
+  "1" = "#1F77B4",
+  "2" = "#FF7F0F",
+  "3" = "#2CA02C"
+)
+
+# Clean labels if needed
+ce_land_df <- ce_land_df %>%
+  mutate(
+    Land_use_clean = case_when(
+      Land_use == "Historically forested" ~ "Historically\nforested",
+      Land_use == "Historically pasture" ~ "Historically\npasture",
+      TRUE ~ as.character(Land_use)
+    )
+  )
+
+ce_soil_df <- ce_soil_df %>%
+  mutate(
+    Soil_type_clean = as.character(Soil_type)
+  )
+
+theme_ce <- theme_classic(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.title = element_text(face = "bold"),
+    legend.title = element_text(face = "bold"),
+    legend.position = "right"
+  )
+
+p_ce_land <- ggplot(
+  ce_land_df,
+  aes(
+    x = Land_use_clean,
+    y = estimate__,
+    color = category_clean,
+    group = category_clean
+  )
+) +
+  geom_errorbar(
+    aes(ymin = lower__, ymax = upper__),
+    width = 0.08,
+    linewidth = 0.7,
+    position = position_dodge(width = 0.45)
+  ) +
+  geom_point(
+    size = 3,
+    position = position_dodge(width = 0.45)
+  ) +
+  scale_color_manual(values = cluster_cols, name = "Cluster") +
+  scale_y_continuous(
+    limits = c(0, 1),
+    labels = function(x) paste0(round(x * 100), "%"),
+    expand = expansion(mult = c(0, 0.03))
+  ) +
+  labs(
+    x = "Management history",
+    y = "Predicted probability",
+  ) +
+  theme_ce
+
+#soil plot
+p_ce_soil <- ggplot(
+  ce_soil_df,
+  aes(
+    x = Soil_type_clean,
+    y = estimate__,
+    color = category_clean,
+    group = category_clean
+  )
+) +
+  geom_errorbar(
+    aes(ymin = lower__, ymax = upper__),
+    width = 0.08,
+    linewidth = 0.7,
+    position = position_dodge(width = 0.45)
+  ) +
+  geom_point(
+    size = 3,
+    position = position_dodge(width = 0.45)
+  ) +
+  scale_color_manual(values = cluster_cols, name = "Cluster") +
+  scale_y_continuous(
+    limits = c(0, 1),
+    labels = function(x) paste0(round(x * 100), "%"),
+    expand = expansion(mult = c(0, 0.03))
+  ) +
+  labs(
+    x = "Soil type",
+    y = "Predicted probability"
+  ) +
+  theme_ce
+
+##elevation plot
+p_ce_elev <- ggplot(ce_elev_df, aes(
+  x = Elevation_sc,
+  y = estimate__,
+  color = category_clean,
+  fill = category_clean
+)) +
+  geom_ribbon(
+    aes(ymin = lower__, ymax = upper__),
+    alpha = 0.15,
+    color = NA
+  ) +
+  geom_line(linewidth = 1) +
+  scale_color_manual(values = cluster_cols, drop = FALSE) +
+  scale_fill_manual(values = cluster_cols, drop = FALSE) + theme_ce +
+  labs(
+    x = "Scaled elevation",
+    y = "Predicted probability",
+    color = "Cluster",
+    fill = "Cluster"
+  )
+
+#slope plot
+p_ce_slope <- ggplot(ce_slope_df, aes(
+  x = Slope_sc,
+  y = estimate__,
+  color = category_clean,
+  fill = category_clean
+)) +
+  geom_ribbon(
+    aes(ymin = lower__, ymax = upper__),
+    alpha = 0.15,
+    color = NA
+  ) +
+  geom_line(linewidth = 1) +
+  scale_color_manual(values = cluster_cols, drop = FALSE) +
+  scale_fill_manual(values = cluster_cols, drop = FALSE) +
+  theme_ce +
+  labs(
+    x = "Scaled slope",
+    y = "Predicted probability",
+    color = "Cluster",
+    fill = "Cluster"
+  )
+fig_conditional_effects_main <- (p_ce_land | p_ce_soil) /
+  (p_ce_elev | p_ce_slope) +
+  plot_layout(guides = "collect") &
+  theme(
+    legend.position = "bottom",
+    text = element_text(size = 16),
+    axis.title = element_text(size = 16, face = "bold"),
+    axis.text = element_text(size = 14),
+    plot.title = element_text(size = 16, face = "bold"),
+    legend.title = element_text(size = 16, face = "bold"),
+    legend.text = element_text(size = 14)
+  )
+
+fig_conditional_effects_main
+
+ggsave(
+  filename = "figure_conditional_effects_main.png",
+  plot = fig_conditional_effects_main,
+  width = 11,
+  height = 8.5,
+  dpi = 300
+)
+
+
+
+# Land-use predicted probabilities
+land_stats <- ce_land_df %>%
+  mutate(
+    lower_percent = lower__ * 100,
+    estimate_percent = estimate__ * 100,
+    upper_percent = upper__ * 100
+  ) %>%
+  select(
+    Land_use,
+    cluster = category_clean,
+    estimate_percent,
+    lower_percent,
+    upper_percent
+  )
+
+land_stats
+
+soil_stats <- ce_soil_df %>%
+  mutate(
+    lower_percent = lower__ * 100,
+    estimate_percent = estimate__ * 100,
+    upper_percent = upper__ * 100
+  ) %>%
+  select(
+    Soil_type,
+    cluster = category_clean,
+    estimate_percent,
+    lower_percent,
+    upper_percent
+  )
+
+soil_stats
+
+land_change <- ce_land_df %>%
+  select(Land_use, category_clean, estimate__) %>%
+  tidyr::pivot_wider(
+    names_from = Land_use,
+    values_from = estimate__
+  ) %>%
+  mutate(
+    change_pasture_minus_forested =
+      `Historically pasture` - `Historically forested`
+  )
+
+land_change
+
+soil_change <- ce_soil_df %>%
+  select(Soil_type, category_clean, estimate__) %>%
+  tidyr::pivot_wider(
+    names_from = Soil_type,
+    values_from = estimate__
+  ) %>%
+  mutate(
+    change_till_minus_glaciolacustrine =
+      Till - Glaciolacustrine
+  )
+
+soil_change
+
+confusion_table <- table(
+  observed = pred_block_df$Clusters_id,
+  predicted = pred_block_df$predicted_cluster_clean
+)
+
+confusion_table
+
+overall_accuracy <- mean(
+  as.character(pred_block_df$Clusters_id) ==
+    pred_block_df$predicted_cluster_clean
+)
+
+overall_accuracy
+
+library(dplyr)
+
+# Get predicted probabilities from the spatial-block model
+pred_probs_block <- fitted(m_block, scale = "response")
+pred_mean_block <- pred_probs_block[, "Estimate", ]
+
+# Create prediction dataframe
+pred_block_df <- cbind(
+  df_spatial,
+  as.data.frame(pred_mean_block)
+)
+
+# Most likely predicted cluster
+pred_block_df$predicted_cluster <- colnames(pred_mean_block)[
+  apply(pred_mean_block, 1, which.max)
+]
+
+# Clean predicted cluster labels
+pred_block_df$predicted_cluster_clean <- gsub(
+  "P\\(Y = |\\)",
+  "",
+  pred_block_df$predicted_cluster
+)
+
+# Maximum predicted probability = model confidence
+pred_block_df$max_pred_prob <- apply(pred_mean_block, 1, max)
+
+# Correct / incorrect prediction
+pred_block_df <- pred_block_df %>%
+  mutate(
+    Clusters_id = as.character(Clusters_id),
+    predicted_cluster_clean = as.character(predicted_cluster_clean),
+    correct_prediction = Clusters_id == predicted_cluster_clean
+  )
+
+overall_accuracy <- mean(pred_block_df$correct_prediction, na.rm = TRUE)
+
+overall_accuracy
+
+accuracy_by_cluster <- pred_block_df %>%
+  group_by(Clusters_id) %>%
+  summarise(
+    n = n(),
+    correct = sum(correct_prediction, na.rm = TRUE),
+    accuracy = mean(correct_prediction, na.rm = TRUE),
+    mean_confidence = mean(max_pred_prob, na.rm = TRUE),
+    median_confidence = median(max_pred_prob, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+accuracy_by_cluster
+
+accuracy_by_cluster_report <- accuracy_by_cluster %>%
+  mutate(
+    accuracy_percent = round(accuracy * 100, 1),
+    mean_confidence_percent = round(mean_confidence * 100, 1),
+    median_confidence_percent = round(median_confidence * 100, 1)
+  ) %>%
+  select(
+    Cluster = Clusters_id,
+    n,
+    correct,
+    accuracy_percent,
+    mean_confidence_percent,
+    median_confidence_percent
+  )
+
+accuracy_by_cluster_report
+
+
+```
+##Final figures for paper (management confounding with environment)
+```{r}
+colnames(df_spatial)
+df_conf <- df_spatial %>%
+  mutate(
+    Clusters_id = factor(Clusters_id, levels = c("1", "2", "3")),
+    Land_use = factor(Land_use),
+    Soil_type = factor(Soil_type),
+    spatial_block = factor(spatial_block)
+  )
+
+# Check factor levels and reference categories
+levels(df_conf$Clusters_id)
+levels(df_conf$Land_use)
+levels(df_conf$Soil_type)
+
+# Cluster 1 is the response reference category
+df_conf$Clusters_id <- relevel(df_conf$Clusters_id, ref = "1")
+
+
+#management and soil type
+
+land_soil_tab <- table(
+  Land_use = df_conf$Land_use,
+  Soil_type = df_conf$Soil_type
+)
+
+# Soil-type proportions within each land-use category
+round(prop.table(land_soil_tab, margin = 1), 3)
+
+# Chi-square test
+chisq_land_soil <- chisq.test(
+  land_soil_tab,
+  correct = FALSE
+)
+
+chisq_land_soil
+
+# Cramer's V function
+cramers_v <- function(tab) {
+  chi_test <- suppressWarnings(
+    chisq.test(tab, correct = FALSE)
+  )
+
+  n_total <- sum(tab)
+  min_dimension <- min(
+    nrow(tab) - 1,
+    ncol(tab) - 1
+  )
+
+  sqrt(
+    as.numeric(chi_test$statistic) /
+      (n_total * min_dimension)
+  )
+}
+
+cramers_v_land_soil <- cramers_v(land_soil_tab)
+
+cramers_v_land_soil
+
+
+# Plot soil-type composition within management histories
+land_soil_plot_df <- df_conf %>%
+  count(Land_use, Soil_type, name = "n") %>%
+  group_by(Land_use) %>%
+  mutate(proportion = n / sum(n)) %>%
+  ungroup()
+
+p_land_soil <- ggplot(
+  land_soil_plot_df,
+  aes(
+    x = Land_use,
+    y = proportion,
+    fill = Soil_type
+  )
+) +
+  geom_col(
+    width = 0.7,
+    color = "white",
+    linewidth = 0.3
+  ) +
+  scale_y_continuous(
+    labels = function(x) paste0(round(x * 100), "%")
+  ) +
+  theme_classic(base_size = 14) +
+  labs(
+    x = "Management history",
+    y = "Proportion",
+    fill = "Soil type"
+  ) +
+  theme(
+    axis.text.x = element_text(
+      angle = 25,
+      hjust = 1
+    )
+  )
+
+p_land_soil
+
+
+#management with other environmental variables
+
+management_environment_summary <- df_conf %>%
+  group_by(Land_use) %>%
+  summarise(
+    n = n(),
+
+    elevation_mean = mean(Elevation_sc, na.rm = TRUE),
+    elevation_sd = sd(Elevation_sc, na.rm = TRUE),
+
+    slope_mean = mean(Slope_sc, na.rm = TRUE),
+    slope_sd = sd(Slope_sc, na.rm = TRUE),
+
+    northness_mean = mean(northness_sc, na.rm = TRUE),
+    northness_sd = sd(northness_sc, na.rm = TRUE),
+
+    eastness_mean = mean(eastness_sc, na.rm = TRUE),
+    eastness_sd = sd(eastness_sc, na.rm = TRUE),
+
+    .groups = "drop"
+  )
+
+management_environment_summary
+
+
+# Function to calculate standardized mean differences
+calculate_smd <- function(data, outcome, group) {
+
+  temporary_data <- data %>%
+    select(
+      outcome_value = all_of(outcome),
+      group_value = all_of(group)
+    ) %>%
+    filter(
+      !is.na(outcome_value),
+      !is.na(group_value)
+    ) %>%
+    mutate(
+      group_value = factor(group_value)
+    )
+
+  group_levels <- levels(temporary_data$group_value)
+
+  if (length(group_levels) != 2) {
+    stop("Land_use must contain exactly two levels.")
+  }
+
+  group_1 <- temporary_data$outcome_value[
+    temporary_data$group_value == group_levels[1]
+  ]
+
+  group_2 <- temporary_data$outcome_value[
+    temporary_data$group_value == group_levels[2]
+  ]
+
+  pooled_sd <- sqrt(
+    (
+      (length(group_1) - 1) * var(group_1) +
+        (length(group_2) - 1) * var(group_2)
+    ) /
+      (
+        length(group_1) +
+          length(group_2) -
+          2
+      )
+  )
+
+  tibble(
+    predictor = outcome,
+    reference_group = group_levels[1],
+    comparison_group = group_levels[2],
+    mean_reference = mean(group_1),
+    mean_comparison = mean(group_2),
+    standardized_mean_difference =
+      (mean(group_2) - mean(group_1)) / pooled_sd
+  )
+}
+
+management_smd <- bind_rows(
+  calculate_smd(
+    df_conf,
+    "Elevation_sc",
+    "Land_use"
+  ),
+  calculate_smd(
+    df_conf,
+    "Slope_sc",
+    "Land_use"
+  ),
+  calculate_smd(
+    df_conf,
+    "northness_sc",
+    "Land_use"
+  ),
+  calculate_smd(
+    df_conf,
+    "eastness_sc",
+    "Land_use"
+  )
+)
+
+management_smd
+
+
+# Plot environmental overlap by management history
+environment_long <- df_conf %>%
+  select(
+    Land_use,
+    Elevation_sc,
+    Slope_sc,
+    northness_sc,
+    eastness_sc
+  ) %>%
+  pivot_longer(
+    cols = -Land_use,
+    names_to = "Predictor",
+    values_to = "Value"
+  ) %>%
+  mutate(
+    Predictor = recode(
+      Predictor,
+      Elevation_sc = "Elevation",
+      Slope_sc = "Slope",
+      northness_sc = "Northness",
+      eastness_sc = "Eastness"
+    )
+  )
+
+p_management_environment <- ggplot(
+  environment_long,
+  aes(
+    x = Land_use,
+    y = Value,
+    fill = Land_use
+  )
+) +
+  geom_boxplot(
+    width = 0.65,
+    alpha = 0.8,
+    outlier.size = 0.3
+  ) +
+  facet_wrap(
+    ~ Predictor,
+    scales = "free_y",
+    nrow = 2
+  ) +
+  theme_classic(base_size = 14) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(
+      angle = 25,
+      hjust = 1
+    )
+  ) +
+  labs(
+    x = "Management history",
+    y = "Scaled predictor value"
+  )
+
+p_management_environment
+```
+#Final figures for paper (Bayesian spatial model )
+# MANAGEMENT ONLY, ENVIRONMENT ONLY, AND COMBINED
+```{r}
+priors_cat <- c(
+  prior(
+    normal(0, 1),
+    class = "b",
+    dpar = "mu2"
+  ),
+  prior(
+    normal(0, 1),
+    class = "b",
+    dpar = "mu3"
+  ),
+  prior(
+    normal(0, 2),
+    class = "Intercept",
+    dpar = "mu2"
+  ),
+  prior(
+    normal(0, 2),
+    class = "Intercept",
+    dpar = "mu3"
+  )
+)
+
+#management only model 
+m_management <- brm(
+  formula =
+    Clusters_id ~
+    Land_use +
+    (1 | spatial_block),
+
+  data = df_conf,
+  family = categorical(),
+  prior = priors_cat,
+
+  chains = 4,
+  cores = 4,
+  iter = 1000,
+  warmup = 500,
+
+  seed = 123,
+  backend = "cmdstanr",
+
+  control = list(
+    adapt_delta = 0.95,
+    max_treedepth = 12
+  )
+)
+
+#environment only model 
+
+m_environment <- brm(
+  formula =
+    Clusters_id ~
+    Soil_type +
+    Elevation_sc +
+    Slope_sc +
+    northness_sc +
+    eastness_sc +
+    (1 | spatial_block),
+
+  data = df_conf,
+  family = categorical(),
+  prior = priors_cat,
+
+  chains = 4,
+  cores = 4,
+  iter = 1000,
+  warmup = 500,
+
+  seed = 123,
+  backend = "cmdstanr",
+
+  control = list(
+    adapt_delta = 0.95,
+    max_treedepth = 12
+  )
+)
+
+#combined model 
+m_combined <- brm(
+  formula = Clusters_id ~
+    Land_use +
+    Soil_type +
+    Elevation_sc +
+    Slope_sc +
+    northness_sc +
+    eastness_sc +
+    (1 | spatial_block),
+  data = df_spatial,
+  family = categorical(),
+  prior = priors_cat,
+  chains = 4,
+  cores = 4,
+  iter = 1000,
+  warmup = 500,
+  seed = 123,
+  backend = "cmdstanr",
+  control = list(
+    adapt_delta = 0.95,
+    max_treedepth = 12
+  )
+)
+
+summary(m_management)
+summary(m_environment)
+summary(m_combined)
+
+
+# Compare all three models
+loo_all_models <- loo_compare(
+  loo_combined,
+  loo_environment,
+  loo_management
+)
+
+loo_all_models
+
+# Does adding management improve the environmental spatial model?
+loo_management_added <- loo_compare(
+  loo_combined,
+  loo_environment
+)
+
+loo_management_added
+
+
+# Compare combined model with management-only model
+loo_environment_added <- loo_compare(
+  loo_combined,
+  loo_management
+)
+
+loo_environment_added
+
+
+# COMPARE LAND-USE COEFFICIENTS BEFORE AND AFTER
+# ENVIRONMENTAL ADJUSTMENT
+
+management_only_effects <- as.data.frame(
+  fixef(m_management),
+  row.names = TRUE
+) %>%
+  rownames_to_column("parameter") %>%
+  filter(
+    grepl("Land_use", parameter)
+  ) %>%
+  mutate(
+    model = "Management only"
+  )
+
+combined_management_effects <- as.data.frame(
+  fixef(m_block),
+  row.names = TRUE
+) %>%
+  rownames_to_column("parameter") %>%
+  filter(
+    grepl("Land_use", parameter)
+  ) %>%
+  mutate(
+    model = "Management + environment"
+  )
+
+management_effect_comparison <- bind_rows(
+  management_only_effects,
+  combined_management_effects
+) %>%
+  select(
+    model,
+    parameter,
+    Estimate,
+    Est.Error,
+    Q2.5,
+    Q97.5
+  ) %>%
+  rename(
+    estimate = Estimate,
+    posterior_sd = Est.Error,
+    lower_95_CrI = Q2.5,
+    upper_95_CrI = Q97.5
+  )
+
+management_effect_comparison
+
+##diagnostics
+write.csv(
+  management_environment_summary,
+  "management_environment_summary.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  management_smd,
+  "management_environment_standardized_differences.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  as.data.frame(continuous_correlation_matrix),
+  "continuous_predictor_correlations.csv",
+  row.names = TRUE
+)
+
+####table for contrast from m_combined model
+
+model_effect_table <- fixef(
+  m_combined,
+  probs = c(0.025, 0.975)
+) %>%
+  as.data.frame() %>%
+  rownames_to_column("parameter") %>%
+  
+  # Exclude model intercepts
+  filter(!str_detect(parameter, "Intercept")) %>%
+  
+  mutate(
+    # Identify the cluster contrast
+    contrast = case_when(
+      str_detect(parameter, "^mu2_") ~ "Cluster 2 vs Cluster 1",
+      str_detect(parameter, "^mu3_") ~ "Cluster 3 vs Cluster 1",
+      TRUE ~ NA_character_
+    ),
+
+    # Remove mu2_ or mu3_ from parameter name
+    predictor_raw = str_remove(parameter, "^mu[23]_"),
+
+    # Create readable predictor names
+    predictor = case_when(
+      str_detect(
+        predictor_raw,
+        regex("Land_use.*pasture", ignore_case = TRUE)
+      ) ~ "Historically pastured",
+
+      str_detect(
+        predictor_raw,
+        regex("Soil_type.*Till", ignore_case = TRUE)
+      ) ~ "Till soil",
+
+      predictor_raw == "Elevation_sc" ~ "Elevation",
+      predictor_raw == "Slope_sc" ~ "Slope",
+      predictor_raw == "northness_sc" ~ "Northness",
+      predictor_raw == "eastness_sc" ~ "Eastness",
+
+      TRUE ~ predictor_raw
+    )
+  ) %>%
+
+  transmute(
+    Contrast = contrast,
+    Predictor = predictor,
+    Estimate = Estimate,
+    `Posterior SD` = Est.Error,
+    `Lower 95% CrI` = Q2.5,
+    `Upper 95% CrI` = Q97.5
+  ) %>%
+
+  mutate(
+    across(
+      c(
+        Estimate,
+        `Posterior SD`,
+        `Lower 95% CrI`,
+        `Upper 95% CrI`
+      ),
+      ~ round(.x, 2)
+    )
+  )
+
+model_effect_table
+write.csv(
+  model_effect_table,
+  "combined_model_fixed_effects.csv",
+  row.names = FALSE
+)
+
+
+```
+##Final figures for the paper- spatial model conditional effects
+```{r}
+
+cluster_cols <- c(
+  "1" = "#1F77B4",
+  "2" = "#FF7F0E",
+  "3" = "#2CA02C"
+)
+
+ce_land <- conditional_effects(
+  m_combined,
+  effects = "Land_use",
+  categorical = TRUE,
+  re_formula = NA,
+  probs = c(0.025, 0.975)
+)
+
+ce_soil <- conditional_effects(
+  m_combined,
+  effects = "Soil_type",
+  categorical = TRUE,
+  re_formula = NA,
+  probs = c(0.025, 0.975)
+)
+
+ce_elevation <- conditional_effects(
+  m_combined,
+  effects = "Elevation_sc",
+  categorical = TRUE,
+  re_formula = NA,
+  probs = c(0.025, 0.975),
+  resolution = 100
+)
+
+ce_slope <- conditional_effects(
+  m_combined,
+  effects = "Slope_sc",
+  categorical = TRUE,
+  re_formula = NA,
+  probs = c(0.025, 0.975),
+  resolution = 100
+)
+
+ce_northness <- conditional_effects(
+  m_combined,
+  effects = "northness_sc",
+  categorical = TRUE,
+  re_formula = NA,
+  probs = c(0.025, 0.975),
+  resolution = 100
+)
+
+ce_eastness <- conditional_effects(
+  m_combined,
+  effects = "eastness_sc",
+  categorical = TRUE,
+  re_formula = NA,
+  probs = c(0.025, 0.975),
+  resolution = 100
+)
+
+#conditional effects to data frame
+clean_ce <- function(ce_object) {
+
+  ce_df <- as.data.frame(ce_object[[1]])
+
+  category_col <- intersect(
+    c("cats__", "category", "cat", "resp"),
+    names(ce_df)
+  )[1]
+
+  if (is.na(category_col)) {
+    stop(
+      "Could not identify the cluster category column. Columns are: ",
+      paste(names(ce_df), collapse = ", ")
+    )
+  }
+
+  ce_df %>%
+    mutate(
+      cluster = as.character(.data[[category_col]]),
+      cluster = str_remove(cluster, "^P\\(Y = "),
+      cluster = str_remove(cluster, "\\)$"),
+      cluster = str_remove(cluster, "^mu"),
+      cluster = factor(cluster, levels = c("1", "2", "3"))
+    )
+}
+
+ce_land_df <- clean_ce(ce_land)
+ce_soil_df <- clean_ce(ce_soil)
+ce_elevation_df <- clean_ce(ce_elevation)
+ce_slope_df <- clean_ce(ce_slope)
+ce_northness_df <- clean_ce(ce_northness)
+ce_eastness_df <- clean_ce(ce_eastness)
+
+
+ce_land_df <- ce_land_df %>%
+  mutate(
+    Land_use_label = case_when(
+      str_detect(
+        as.character(Land_use),
+        regex("forest", ignore_case = TRUE)
+      ) ~ "Historically\nforested",
+
+      str_detect(
+        as.character(Land_use),
+        regex("pasture", ignore_case = TRUE)
+      ) ~ "Historically\npastured",
+
+      TRUE ~ str_wrap(as.character(Land_use), width = 15)
+    )
+  )
+
+ce_soil_df <- ce_soil_df %>%
+  mutate(
+    Soil_type_label = str_replace_all(
+      as.character(Soil_type),
+      "_",
+      " "
+    )
+  )
+
+theme_effects <- theme_classic(base_size = 14) +
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      size = 18
+    ),
+    plot.tag = element_text(
+      face = "bold",
+      size = 18
+    ),
+    axis.title = element_text(
+      face = "bold",
+      size = 18
+    ),
+    axis.text = element_text(size = 12),
+    legend.title = element_text(
+      face = "bold",
+      size = 18
+    ),
+    legend.text = element_text(size = 12)
+  )
+
+plot_categorical_effect <- function(
+    data,
+    x_variable,
+    x_label,
+    panel_title
+) {
+
+  dodge <- position_dodge(width = 0.45)
+
+  ggplot(
+    data,
+    aes(
+      x = .data[[x_variable]],
+      y = estimate__,
+      color = cluster,
+      group = cluster
+    )
+  ) +
+    geom_errorbar(
+      aes(
+        ymin = lower__,
+        ymax = upper__
+      ),
+      width = 0.08,
+      linewidth = 0.8,
+      position = dodge
+    ) +
+    geom_point(
+      size = 3.2,
+      position = dodge
+    ) +
+    scale_color_manual(
+      values = cluster_cols,
+      name = "Cluster"
+    ) +
+    scale_y_continuous(
+      labels = function(x) paste0(round(x * 100), "%"),
+      breaks = seq(0, 1, by = 0.25),
+      expand = expansion(mult = c(0.01, 0.03))
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    labs(
+      x = x_label,
+      y = "Predicted probability",
+      title = panel_title
+    ) +
+    theme_effects
+}
+
+
+plot_continuous_effect <- function(
+    data,
+    x_variable,
+    x_label,
+    panel_title
+) {
+
+  ggplot(
+    data,
+    aes(
+      x = .data[[x_variable]],
+      y = estimate__,
+      color = cluster,
+      fill = cluster
+    )
+  ) +
+    geom_ribbon(
+      aes(
+        ymin = lower__,
+        ymax = upper__
+      ),
+      alpha = 0.15,
+      color = NA
+    ) +
+    geom_line(linewidth = 1.1) +
+    scale_color_manual(
+      values = cluster_cols,
+      name = "Cluster"
+    ) +
+    scale_fill_manual(
+      values = cluster_cols,
+      guide = "none"
+    ) +
+    scale_y_continuous(
+      labels = function(x) paste0(round(x * 100), "%"),
+      breaks = seq(0, 1, by = 0.25),
+      expand = expansion(mult = c(0.01, 0.03))
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    labs(
+      x = x_label,
+      y = "Predicted probability",
+      title = panel_title
+    ) +
+    theme_effects
+}
+
+
+#plot
+p_land <- plot_categorical_effect(
+  data = ce_land_df,
+  x_variable = "Land_use_label",
+  x_label = "Management history",
+  panel_title = "Management history"
+)
+
+p_soil <- plot_categorical_effect(
+  data = ce_soil_df,
+  x_variable = "Soil_type_label",
+  x_label = "Soil type",
+  panel_title = "Soil type"
+)
+
+p_elevation <- plot_continuous_effect(
+  data = ce_elevation_df,
+  x_variable = "Elevation_sc",
+  x_label = "Scaled elevation",
+  panel_title = "Elevation"
+)
+
+p_slope <- plot_continuous_effect(
+  data = ce_slope_df,
+  x_variable = "Slope_sc",
+  x_label = "Scaled slope",
+  panel_title = "Slope"
+)
+
+p_northness <- plot_continuous_effect(
+  data = ce_northness_df,
+  x_variable = "northness_sc",
+  x_label = "Scaled northness",
+  panel_title = "Northness"
+)
+
+p_eastness <- plot_continuous_effect(
+  data = ce_eastness_df,
+  x_variable = "eastness_sc",
+  x_label = "Scaled eastness",
+  panel_title = "Eastness"
+)
+
+#combine figures
+fig_all_effects <- (
+  p_land | p_soil
+) / (
+  p_elevation | p_slope
+) / (
+  p_northness | p_eastness
+) +
+  plot_layout(
+    guides = "collect"
+  ) +
+  plot_annotation(
+    tag_levels = "A"
+  ) &
+  theme(
+    legend.position = "bottom"
+  )
+
+fig_all_effects
+
+ggsave(
+  filename = "figure_all_model_conditional_effects.png",
+  plot = fig_all_effects,
+  width = 11,
+  height = 13,
+  dpi = 300
+)
+
+
+```
+##Model accuracy
+```{r}
+
+# posterior draws × observations × clusters
+epred <- posterior_epred(
+  m_combined,
+  re_formula = NULL
+)
+
+dim(epred)
+
+
+# Result: observations × clusters
+mean_probabilities <- apply(
+  epred,
+  MARGIN = c(2, 3),
+  FUN = mean
+)
+
+# Obtain cluster labels from the model output
+cluster_levels <- dimnames(epred)[[3]]
+
+if (is.null(cluster_levels)) {
+  cluster_levels <- levels(
+    factor(m_combined$data$Clusters_id)
+  )
+}
+
+colnames(mean_probabilities) <- cluster_levels
+
+
+# Assign each stem to its most probable cluster
+
+predicted_cluster <- cluster_levels[
+  max.col(
+    mean_probabilities,
+    ties.method = "first"
+  )
+]
+
+observed_cluster <- as.character(
+  m_combined$data$Clusters_id
+)
+
+# Check that model predictions and observations align
+stopifnot(
+  length(predicted_cluster) == length(observed_cluster)
+)
+
+#overall accuracy
+overall_accuracy <- mean(
+  predicted_cluster == observed_cluster
+)
+
+cat(
+  "Overall in-sample accuracy:",
+  round(overall_accuracy * 100, 1),
+  "%\n"
+)
+
+#accuracy by cluster
+accuracy_by_cluster <- tibble(
+  observed = observed_cluster,
+  predicted = predicted_cluster
+) %>%
+  group_by(observed) %>%
+  summarise(
+    n_stems = n(),
+    n_correct = sum(predicted == observed),
+    accuracy = mean(predicted == observed),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    accuracy_percent = round(accuracy * 100, 1),
+    cluster = paste("Cluster", observed)
+  ) %>%
+  select(
+    cluster,
+    n_stems,
+    n_correct,
+    accuracy_percent
+  )
+
+accuracy_by_cluster
+
+
+
+```
